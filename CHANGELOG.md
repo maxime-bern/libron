@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.26
+
+### Nerd Fonts variants
+
+Libron is now also built with [Nerd Fonts](https://www.nerdfonts.com) icons and Powerline glyphs, in two flavours: `LibronNerdFonts.zip` (family `Libron Nerd Font`) and `LibronNerdFontsMono.zip` (family `Libron Nerd Font Mono`).
+
+`build.py --with-nerdfonts` patches the desktop TTFs with the official `font-patcher` (`--complete`, version pinned in `build.py`) and writes `out/nerd/`.
+
+`build.py --with-nerdfonts-mono` additionally converts the exported TTFs onto a single advance width (`scripts/make_mono.py`) before patching them with `--single-width-glyphs`, and writes `out/nerd-mono/`. Libron is a proportional reading font, so this is a mechanical conversion: the cell is 0.636em, glyphs whose ink is wider than the cell are condensed to fit it, all ink is centred in the cell, and ASCII glyphs that would float in it are widened, capped so punctuation does not turn into blobs. Kerning and hinting are dropped, because the outlines move; a designer's monospace would redraw those glyphs instead of scaling them. Being a monospaced source, this variant also gains box drawing, block elements and braille, which `font-patcher` only adds to monospaced fonts.
+
+Both are on by default in `./local-build.sh`, checked by `scripts/check_nerdfonts.py` (family, patched glyph sets, and a strict single advance width for the mono variant) and published by the release workflows.
+
+The desktop TTFs, their outlines and their spacing are unchanged from v0.25.
+
 ## v0.25
 
 ### Small caps

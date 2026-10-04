@@ -15,20 +15,35 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Build fonts
-        run: python3 build.py --with-kobofix
+        run: python3 build.py --with-kobofix --with-nerdfonts
 
       - name: Validate generated fonts with ots-sanitize
         run: |
-          for font in out/ttf/*.ttf out/kf/*.ttf out/web/*.woff2; do
+          for font in out/ttf/*.ttf out/nerd/*.ttf out/nerd-mono/*.ttf out/kf/*.ttf out/web/*.woff2; do
             echo "Validating ${font}"
             ots-sanitize "${font}"
           done
+
+      - name: Check Nerd Fonts variants
+        run: python3 scripts/check_nerdfonts.py
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
         with:
           name: Libron
           path: out/ttf/*.ttf
+
+      - name: Upload Nerd Fonts artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: Libron_NerdFonts
+          path: out/nerd/*.ttf
+
+      - name: Upload Nerd Fonts mono artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: Libron_NerdFontsMono
+          path: out/nerd-mono/*.ttf
 
       - name: Upload Kobo artifact
         uses: actions/upload-artifact@v6
@@ -46,6 +61,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         run: |
           cd out/ttf && zip -j ../../Libron.zip *.ttf
+          cd ../../out/nerd && zip -j ../../LibronNerdFonts.zip *.ttf
+          cd ../../out/nerd-mono && zip -j ../../LibronNerdFontsMono.zip *.ttf
           cd ../../out/kf && zip -j ../../KF_Libron.zip *.ttf
           cd ../../out/web && zip -j ../../Libron_Web.zip *.woff2
 
@@ -56,6 +73,8 @@ jobs:
           name: Libron-release
           path: |
             Libron.zip
+            LibronNerdFonts.zip
+            LibronNerdFontsMono.zip
             KF_Libron.zip
             Libron_Web.zip
 
@@ -88,6 +107,8 @@ jobs:
           - **If you are using a Kobo device**, download [KF_Libron.zip](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}/KF_Libron.zip). It has been processed with `kobo-font-fix` for improved compatibility with Kobo's `kepub` renderer.
           - **If you are using a Kindle, another e-reader or a desktop computer**, download [Libron.zip](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}/Libron.zip).
           - **If you are using CrossPoint Reader**, Libron for the Xteink X3 and X4 devices is published as `cpfont` files in [ebook-fonts](https://github.com/nicoverbruggen/ebook-fonts).
+          - **If you are using a terminal or editor**, download [LibronNerdFonts.zip](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}/LibronNerdFonts.zip). It has been patched with [Nerd Fonts](https://www.nerdfonts.com) icons and Powerline glyphs.
+          - **If you need a strict single-cell grid**, download [LibronNerdFontsMono.zip](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}/LibronNerdFontsMono.zip). It is the same font converted to one advance width, which is what terminals require.
           - **If you want to use Libron on a website**, download [Libron_Web.zip](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}/Libron_Web.zip).
 
           ### Learn more
@@ -120,5 +141,7 @@ jobs:
           body: ${{ env.RELEASE_BODY }}
           files: |
             Libron.zip
+            LibronNerdFonts.zip
+            LibronNerdFontsMono.zip
             KF_Libron.zip
             Libron_Web.zip

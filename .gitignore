@@ -4,3 +4,5 @@ tools/
 proofs/
 .release-baseline-ttf/
 .release-section.md
+__pycache__/
+.config/

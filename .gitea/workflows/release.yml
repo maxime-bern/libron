@@ -17,19 +17,24 @@ jobs:
           fetch-depth: 0
 
       - name: Build fonts
-        run: python3 build.py --with-kobofix
+        run: python3 build.py --with-kobofix --with-nerdfonts
 
       - name: Validate generated fonts with ots-sanitize
         run: |
-          for font in out/ttf/*.ttf out/kf/*.ttf out/web/*.woff2; do
+          for font in out/ttf/*.ttf out/nerd/*.ttf out/nerd-mono/*.ttf out/kf/*.ttf out/web/*.woff2; do
             echo "Validating ${font}"
             ots-sanitize "${font}"
           done
+
+      - name: Check Nerd Fonts variants
+        run: python3 scripts/check_nerdfonts.py
 
       - name: Create zip files
         if: startsWith(gitea.ref, 'refs/tags/')
         run: |
           cd out/ttf && zip -j /tmp/Libron.zip *.ttf
+          cd $GITHUB_WORKSPACE/out/nerd && zip -j /tmp/LibronNerdFonts.zip *.ttf
+          cd $GITHUB_WORKSPACE/out/nerd-mono && zip -j /tmp/LibronNerdFontsMono.zip *.ttf
           cd $GITHUB_WORKSPACE/out/kf  && zip -j /tmp/KF_Libron.zip *.ttf
           cd $GITHUB_WORKSPACE/out/web && zip -j /tmp/Libron_Web.zip *.woff2
 
@@ -47,6 +52,8 @@ jobs:
           - **If you are using a Kobo device**, download [KF_Libron.zip](${{ gitea.server_url }}/${{ gitea.repository }}/releases/download/${{ gitea.ref_name }}/KF_Libron.zip). It has been processed with `kobo-font-fix` for improved compatibility with Kobo's `kepub` renderer.
           - **If you are using a Kindle, another e-reader or a desktop computer**, download [Libron.zip](${{ gitea.server_url }}/${{ gitea.repository }}/releases/download/${{ gitea.ref_name }}/Libron.zip).
           - **If you are using CrossPoint Reader**, Libron for the Xteink X3 and X4 devices is published as `cpfont` files in [ebook-fonts](https://github.com/nicoverbruggen/ebook-fonts).
+          - **If you are using a terminal or editor**, download [LibronNerdFonts.zip](${{ gitea.server_url }}/${{ gitea.repository }}/releases/download/${{ gitea.ref_name }}/LibronNerdFonts.zip). It has been patched with [Nerd Fonts](https://www.nerdfonts.com) icons and Powerline glyphs.
+          - **If you need a strict single-cell grid**, download [LibronNerdFontsMono.zip](${{ gitea.server_url }}/${{ gitea.repository }}/releases/download/${{ gitea.ref_name }}/LibronNerdFontsMono.zip). It is the same font converted to one advance width, which is what terminals require.
           - **If you want to use Libron on a website**, download [Libron_Web.zip](${{ gitea.server_url }}/${{ gitea.repository }}/releases/download/${{ gitea.ref_name }}/Libron_Web.zip).
 
           ### Learn more
@@ -83,5 +90,7 @@ jobs:
           body: ${{ env.RELEASE_BODY }}
           files: |
             /tmp/Libron.zip
+            /tmp/LibronNerdFonts.zip
+            /tmp/LibronNerdFontsMono.zip
             /tmp/KF_Libron.zip
             /tmp/Libron_Web.zip

@@ -14,13 +14,17 @@ Pipeline:
   1. Open each master SFD with FontForge
   2. Remove overlaps / correct direction (outline cleanup)
   3. Apply vertical metrics, line height, renaming, version, copyright
-  5. Export TTFs to ./out/ttf/
-  6. Post-process TTFs (style flags, version names, autohinting)
-  7. Run kobo-font-fix to generate Kobo (KF) variants in ./out/kf/
-  8. Generate WOFF2 webfonts in ./out/web/
+  4. Export TTFs to ./out/ttf/
+  5. Post-process TTFs (style flags, version names, autohinting)
+  6. Patch Nerd Fonts glyphs into the TTFs, in ./out/nerd/ (opt-in)
+  7. Force a single advance width on the TTFs and patch the terminal variant,
+     in ./out/nerd-mono/ (opt-in)
+  8. Run kobo-font-fix to generate Kobo (KF) variants in ./out/kf/ (opt-in)
+  9. Generate WOFF2 webfonts in ./out/web/
 
 No glyph scaling, condensing, ligature edits, or other outline transforms
-are applied — the masters are already final. This is a straight export.
+are applied to the desktop TTFs — the masters are already final. The mono
+variant is the exception: it is a mechanical conversion, for terminals.
 
 Run with the prebuilt fntbld container (recommended; bundles FontForge,
 ttfautohint, fonttools, brotli, skia-pathops):
@@ -49,8 +53,14 @@ ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 SRC_DIR = os.path.join(ROOT_DIR, "src")
 OUT_DIR = os.path.join(ROOT_DIR, "out")
 OUT_TTF_DIR = os.path.join(OUT_DIR, "ttf")
+OUT_NERD_DIR = os.path.join(OUT_DIR, "nerd")
+OUT_MONO_DIR = os.path.join(OUT_DIR, "mono")
+OUT_NERD_MONO_DIR = os.path.join(OUT_DIR, "nerd-mono")
 OUT_KF_DIR = os.path.join(OUT_DIR, "kf")
 OUT_WEB_DIR = os.path.join(OUT_DIR, "web")
+
+sys.path.insert(0, os.path.join(ROOT_DIR, "scripts"))
+import make_mono  # noqa: E402  (font post-processing helpers live in scripts/)
 
 with open(os.path.join(ROOT_DIR, "VERSION")) as version_file:
     FONT_VERSION = version_file.read().strip()
@@ -88,6 +98,21 @@ SELECTION_HEIGHT = 1.3
 ASCENDER_RATIO = 0.8
 
 KOBOFIX_URL = "https://raw.githubusercontent.com/nicoverbruggen/kobo-font-fix/v0.10/kobofix.py"
+
+# Nerd Fonts patcher (adds Powerline, Font Awesome, Material, Devicons, ...).
+# Pinned to a release tag so the patched output stays reproducible.
+NERDFONTS_VERSION = "v3.5.1"
+NERDFONTS_URL = (
+    "https://github.com/ryanoasis/nerd-fonts/releases/download/"
+    f"{NERDFONTS_VERSION}/FontPatcher.zip"
+)
+
+# Monospace variant, for terminals. The default cell width is DepartureMono
+# Mono's; --min-ink widens ASCII glyphs that would otherwise float in a wide
+# cell, capped by --max-stretch so punctuation does not turn into blobs.
+MONO_CELL_EM = 0.636
+MONO_MIN_INK = 0.55
+MONO_MAX_STRETCH = 1.35
 
 # ttfautohint options, kept in sync with Readerly.
 AUTOHINT_OPTS = [
@@ -558,6 +583,81 @@ def run_kobofix(kobofix_path, variant_names):
     print(f"  Moved {moved} KF font(s) to {OUT_KF_DIR}/")
 
 
+def download_font_patcher(dest_dir):
+    import urllib.request
+    import zipfile
+
+    zip_path = os.path.join(dest_dir, "FontPatcher.zip")
+    if not os.path.isfile(zip_path):
+        print(f"  Downloading FontPatcher.zip ({NERDFONTS_VERSION}) ...")
+        urllib.request.urlretrieve(NERDFONTS_URL, zip_path)
+
+    with zipfile.ZipFile(zip_path) as archive:
+        archive.extractall(dest_dir)
+
+    return os.path.join(dest_dir, "font-patcher")
+
+
+def run_font_patcher(patcher_path, ttf_path, out_dir, extra_args=()):
+    cmd = [
+        sys.executable,
+        patcher_path,
+        "--complete",
+        "--quiet",
+        *extra_args,
+        "--outputdir",
+        out_dir,
+        ttf_path,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+
+    if result.stdout:
+        print(result.stdout, end="")
+
+    if result.returncode != 0:
+        print("\nERROR: font-patcher failed", file=sys.stderr)
+        if result.stderr:
+            print(result.stderr, file=sys.stderr)
+        sys.exit(1)
+
+
+def patch_nerd_fonts(patcher_path, variant_names):
+    os.makedirs(OUT_NERD_DIR, exist_ok=True)
+    for name in variant_names:
+        ttf_path = os.path.join(OUT_TTF_DIR, f"{name}.ttf")
+        print(f"Patching: {name}")
+        run_font_patcher(patcher_path, ttf_path, OUT_NERD_DIR)
+
+
+def make_mono_fonts(variant_names):
+    """Rewrite the exported TTFs onto a single advance width."""
+    from fontTools.misc.roundTools import otRound
+    from fontTools.ttLib import TTFont
+
+    os.makedirs(OUT_MONO_DIR, exist_ok=True)
+
+    for name in variant_names:
+        source = os.path.join(OUT_TTF_DIR, f"{name}.ttf")
+        dest = os.path.join(OUT_MONO_DIR, f"{name}.ttf")
+        font = TTFont(source)
+        cell = otRound(font["head"].unitsPerEm * MONO_CELL_EM)
+        condensed, stretched = make_mono.make_mono(font, cell, MONO_MIN_INK, MONO_MAX_STRETCH)
+        make_mono.check(font, cell)
+        font.save(dest)
+        print(f"  {name}: cell {cell} ({MONO_CELL_EM:.3f}em), "
+              f"{len(condensed)} condensed, {len(stretched)} grown")
+
+
+def patch_mono_nerd_fonts(patcher_path, variant_names):
+    """Patch the monospaced TTFs, with all added glyphs single-width."""
+    make_mono_fonts(variant_names)
+    os.makedirs(OUT_NERD_MONO_DIR, exist_ok=True)
+    for name in variant_names:
+        ttf_path = os.path.join(OUT_MONO_DIR, f"{name}.ttf")
+        print(f"Patching mono: {name}")
+        run_font_patcher(patcher_path, ttf_path, OUT_NERD_MONO_DIR, ("--single-width-glyphs",))
+
+
 def convert_to_woff2(ttf_path, woff2_path):
     """Convert a TTF to WOFF2 using fontTools (requires `brotli`)."""
     try:
@@ -594,6 +694,8 @@ def main():
     family = DEFAULT_FAMILY
     outline_fix = True
     with_kobofix = False
+    with_nerdfonts = False
+    with_nerdfonts_mono = False
 
     if "--name" in sys.argv:
         idx = sys.argv.index("--name")
@@ -604,6 +706,12 @@ def main():
 
     if "--with-kobofix" in sys.argv:
         with_kobofix = True
+
+    if "--with-nerdfonts" in sys.argv:
+        with_nerdfonts = True
+
+    if "--with-nerdfonts-mono" in sys.argv:
+        with_nerdfonts_mono = True
 
     if "--customize" in sys.argv:
         print()
@@ -618,6 +726,8 @@ def main():
     print(f"  Family: {family}")
     print(f"  Outline fix: {'yes' if outline_fix else 'no'}")
     print(f"  Kobo fix: {'yes' if with_kobofix else 'no'}")
+    print(f"  Nerd Fonts: {'yes (' + NERDFONTS_VERSION + ')' if with_nerdfonts else 'no'}")
+    print(f"  Nerd Fonts mono: {'yes (cell ' + f'{MONO_CELL_EM:.3f}' + 'em)' if with_nerdfonts_mono else 'no'}")
     print(f"  Sources: {len(SOURCE_STYLES)}")
 
     tmp_dir = os.path.join(ROOT_DIR, "tmp")
@@ -626,12 +736,26 @@ def main():
     os.makedirs(tmp_dir)
 
     try:
-        build(tmp_dir, family=family, outline_fix=outline_fix, with_kobofix=with_kobofix)
+        build(
+            tmp_dir,
+            family=family,
+            outline_fix=outline_fix,
+            with_kobofix=with_kobofix,
+            with_nerdfonts=with_nerdfonts,
+            with_nerdfonts_mono=with_nerdfonts_mono,
+        )
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-def build(tmp_dir, family=DEFAULT_FAMILY, outline_fix=True, with_kobofix=False):
+def build(
+    tmp_dir,
+    family=DEFAULT_FAMILY,
+    outline_fix=True,
+    with_kobofix=False,
+    with_nerdfonts=False,
+    with_nerdfonts_mono=False,
+):
     variants = [
         (f"{family}-{style}", style, source_path, method)
         for style, source_path, method in SOURCE_STYLES
@@ -695,13 +819,25 @@ def build(tmp_dir, family=DEFAULT_FAMILY, outline_fix=True, with_kobofix=False):
         fix_ttf_version_names(ttf_path)
         autohint_ttf(ttf_path)
 
+    if with_nerdfonts or with_nerdfonts_mono:
+        patcher_path = os.path.join(tmp_dir, "font-patcher")
+        download_font_patcher(tmp_dir)
+
+    if with_nerdfonts:
+        print("\n-- Step 6: Patch Nerd Fonts variants --\n")
+        patch_nerd_fonts(patcher_path, variant_names)
+
+    if with_nerdfonts_mono:
+        print("\n-- Step 7: Build Nerd Fonts mono variants --\n")
+        patch_mono_nerd_fonts(patcher_path, variant_names)
+
     if with_kobofix:
-        print("\n-- Step 4: Generate Kobo (KF) variants --\n")
+        print("\n-- Step 8: Generate Kobo (KF) variants --\n")
         kobofix_path = os.path.join(tmp_dir, "kobofix.py")
         download_kobofix(kobofix_path)
         run_kobofix(kobofix_path, variant_names)
 
-    print("\n-- Step 5: Generate WOFF2 webfonts --\n")
+    print("\n-- Step 9: Generate WOFF2 webfonts --\n")
     os.makedirs(OUT_WEB_DIR, exist_ok=True)
     for name in variant_names:
         ttf_path = os.path.join(OUT_TTF_DIR, f"{name}.ttf")
@@ -711,7 +847,12 @@ def build(tmp_dir, family=DEFAULT_FAMILY, outline_fix=True, with_kobofix=False):
     print("\n" + "=" * 60)
     print("  Build complete!")
     print(f"  TTF fonts are in:  {OUT_TTF_DIR}/")
-    print(f"  KF fonts are in:   {OUT_KF_DIR}/")
+    if with_nerdfonts:
+        print(f"  Nerd fonts are in: {OUT_NERD_DIR}/")
+    if with_nerdfonts_mono:
+        print(f"  Nerd fonts (mono) are in: {OUT_NERD_MONO_DIR}/")
+    if with_kobofix:
+        print(f"  KF fonts are in:   {OUT_KF_DIR}/")
     print(f"  Web fonts are in:  {OUT_WEB_DIR}/")
     print("=" * 60)
 

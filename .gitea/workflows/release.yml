@@ -17,7 +17,7 @@ jobs:
           fetch-depth: 0
 
       - name: Build fonts
-        run: python3 build.py --with-kobofix --with-nerdfonts
+        run: python3 build.py --with-kobofix --with-nerdfonts --with-nerdfonts-mono
 
       - name: Validate generated fonts with ots-sanitize
         run: |

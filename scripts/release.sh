@@ -55,7 +55,7 @@ fi
 [[ -z "$BASELINE" ]] && { echo "error: no baseline tag to diff against" >&2; exit 1; }
 echo ">> releasing ${TAG}, diffing against ${BASELINE}" >&2
 
-run() { podman run --rm -v "$1":/work -w /work "$IMAGE" "${@:2}"; }
+run() { podman run --rm -v "$1":/work:z -w /work "$IMAGE" "${@:2}"; }
 
 # --- 2a. Builds ------------------------------------------------------------ #
 if [[ "$REBUILD" == 1 || ! -f out/ttf/Libron-Regular.ttf ]]; then
